@@ -1,6 +1,7 @@
 package commands
 
 import (
+	"bytes"
 	"fmt"
 	"log"
 	"os"
@@ -61,6 +62,51 @@ func Run() int {
 
 	root := NewCommand("git-lfs", gitlfsCommand)
 	root.PreRun = nil
+
+	completionCmd := &cobra.Command{
+		Use:                   "completion [bash|fish|zsh]",
+		DisableFlagsInUseLine: true,
+		ValidArgs:             []string{"bash", "fish", "zsh"},
+		Args:                  cobra.MatchAll(cobra.ExactArgs(1), cobra.OnlyValidArgs),
+		Run: func(cmd *cobra.Command, args []string) {
+			switch args[0] {
+			case "bash":
+				completion := new(bytes.Buffer)
+				cmd.Root().GenBashCompletionV2(completion, false)
+
+				// this is needed for git bash completion to pick up the completion for the subcommand
+				completionSource := []byte(`    local out directive
+    __git-lfs_get_completion_results
+`)
+				completionReplace := []byte(`    if [[ ${words[0]} == "git" && ${words[1]} == "lfs" ]]; then
+        words=("git-lfs" "${words[@]:2:${#words[@]}-2}")
+        __git-lfs_debug "Rewritten words[*]: ${words[*]},"
+    fi
+
+    local out directive
+    __git-lfs_get_completion_results
+`)
+				newCompletion := bytes.NewBuffer(bytes.Replace(completion.Bytes(), completionSource, completionReplace, 1))
+				newCompletion.WriteString("_git_lfs() { __start_git-lfs; }\n")
+
+				newCompletion.WriteTo(os.Stdout)
+			case "fish":
+				cmd.Root().GenFishCompletion(os.Stdout, false)
+			case "zsh":
+				completion := new(bytes.Buffer)
+				cmd.Root().GenZshCompletionNoDesc(completion)
+
+				// this is needed for git zsh completion to use the right command for completion
+				completionSource := []byte(`    requestComp="${words[1]} __completeNoDesc ${words[2,-1]}"`)
+				completionReplace := []byte(`    requestComp="git-${words[1]#*git-} __completeNoDesc ${words[2,-1]}"`)
+				newCompletion := bytes.NewBuffer(bytes.Replace(completion.Bytes(), completionSource, completionReplace, 1))
+
+				newCompletion.WriteTo(os.Stdout)
+			}
+		},
+	}
+
+	root.AddCommand(completionCmd)
 
 	// Set up help/usage funcs based on manpage text
 	helpcmd := &cobra.Command{
