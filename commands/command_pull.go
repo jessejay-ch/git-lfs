@@ -87,13 +87,12 @@ func pull(filter *filepathfilter.Filter) {
 	}()
 
 	processQueue := time.Now()
-	if err := gitscanner.ScanTree(ref.Sha, nil); err != nil {
+	if err := gitscanner.ScanLFSFiles(ref.Sha, nil); err != nil {
 		singleCheckout.Close()
 		ExitWithError(err)
 	}
 
 	meter.Start()
-	gitscanner.Close()
 	q.Wait()
 	wg.Wait()
 	tracerx.PerformanceSince("process queue", processQueue)
