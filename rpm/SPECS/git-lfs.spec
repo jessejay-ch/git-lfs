@@ -1,11 +1,11 @@
 Name:           git-lfs
-Version:        3.3.0
+Version:        3.6.0
 Release:        1%{?dist}
 Summary:        Git extension for versioning large files
 
 Group:          Applications/Archiving
 License:        MIT
-URL:            https://git-lfs.github.com/
+URL:            https://git-lfs.com/
 Source0:        https://github.com/git-lfs/git-lfs/archive/v%{version}/%{name}-%{version}.tar.gz
 BuildRoot:      %{_tmppath}/%{name}-%{version}-%{release}-root-%(%{__id_u} -n)
 BuildRequires:  perl-Digest-SHA
@@ -71,7 +71,7 @@ export SKIPAPITESTCOMPILE=1
 
 pushd src/github.com/git-lfs/%{name}
   make test
-  make -C t PROVE_EXTRA_ARGS=-j4 test
+  make -C t PROVE_EXTRA_ARGS=-j9 test
 popd
 
 rm -rf ${GIT_LFS_TEST_DIR}

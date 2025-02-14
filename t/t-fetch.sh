@@ -63,11 +63,18 @@ begin_test "fetch"
   cd clone
   rm -rf .git/lfs/objects
 
+  git lfs fetch --dry-run 2>&1 | tee fetch.log
+  grep "fetch $contents_oid => a\.dat" fetch.log
+  refute_local_object "$contents_oid"
+
   git lfs fetch
   assert_local_object "$contents_oid" 1
 
   git lfs fsck 2>&1 | tee fsck.log
   grep "Git LFS fsck OK" fsck.log
+
+  git lfs fetch --dry-run 2>&1 | tee fetch.log
+  grep "fetch .* => a\.dat" fetch.log && exit 1 || true
 )
 end_test
 
@@ -95,7 +102,7 @@ begin_test "fetch (shared repository)"
   rm -rf .git/lfs/objects
 
   git lfs fetch 2>&1 | tee fetch.log
-  ! grep "Could not scan" fetch.log
+  grep "Could not scan" fetch.log && exit 1
   assert_local_object "$contents_oid" 1
 
   git lfs fsck 2>&1 | tee fsck.log
@@ -128,12 +135,21 @@ begin_test "fetch with remote and branches"
 
   rm -rf .git/lfs/objects
 
+  git lfs fetch origin main newbranch --dry-run | tee fetch.log
+  grep "fetch $contents_oid => a\.dat" fetch.log
+  grep "fetch $b_oid => b\.dat" fetch.log
+  refute_local_object "$contents_oid"
+  refute_local_object "$b_oid"
+
   git lfs fetch origin main newbranch
   assert_local_object "$contents_oid" 1
   assert_local_object "$b_oid" 1
 
   git lfs fsck 2>&1 | tee fsck.log
   grep "Git LFS fsck OK" fsck.log
+
+  git lfs fetch origin main newbranch --dry-run | tee fetch.log
+  grep "fetch .* => [ab]\.dat" fetch.log && exit 1 || true
 )
 end_test
 
@@ -295,6 +311,20 @@ begin_test "fetch with missing object"
   [ "$fetch_exit" != "0" ]
   assert_local_object "$contents_oid" 1
   refute_local_object "$b_oid"
+)
+end_test
+
+begin_test "fetch does not crash on empty key files"
+(
+  set -e
+  cd clone
+  rm -rf .git/lfs/objects
+
+  git config --local http.sslKey /dev/null
+  git config --local http.sslCert /dev/null
+
+  git lfs fetch origin main 2>&1 | tee fetch.log
+  grep "Error decoding PEM block" fetch.log
 )
 end_test
 
@@ -625,6 +655,16 @@ begin_test "fetch raw remote url"
   # LFS object downloaded, pointer still in working directory
   assert_local_object "$contents_oid" 1
   grep "$content_oid" a.dat
+)
+end_test
+
+begin_test "fetch with invalid ref"
+(
+  set -e
+  cd repo
+
+  git lfs fetch origin jibberish >fetch.log 2>&1 && exit 1
+  grep "Invalid ref argument" fetch.log
 )
 end_test
 

@@ -6,7 +6,6 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"os"
 	"os/user"
 	"path/filepath"
@@ -136,10 +135,7 @@ var (
 	// value of os.Getenv("HOME") for the returned *user.User's "HomeDir"
 	// member.
 	currentUser func() (*user.User, error) = func() (*user.User, error) {
-		u, err := user.Current()
-		if err != nil {
-			return nil, err
-		}
+		u := &user.User{}
 		u.HomeDir = os.Getenv("HOME")
 		return u, nil
 	}
@@ -457,7 +453,7 @@ func SetFileWriteFlag(path string, writeEnabled bool) error {
 // This function is designed to handle only temporary files that will be renamed
 // into place later somewhere within the Git repository.
 func TempFile(dir, pattern string, cfg repositoryPermissionFetcher) (*os.File, error) {
-	tmp, err := ioutil.TempFile(dir, pattern)
+	tmp, err := os.CreateTemp(dir, pattern)
 	if err != nil {
 		return nil, err
 	}
@@ -502,4 +498,22 @@ func CanonicalizePath(path string, missingOk bool) (string, error) {
 		return result, err
 	}
 	return "", nil
+}
+
+const (
+	windowsPrefix = `.\`
+	nixPrefix     = `./`
+)
+
+// TrimCurrentPrefix removes a leading prefix of "./" or ".\" (referring to the
+// current directory in a platform independent manner).
+//
+// It is useful for callers such as "git lfs track" and "git lfs untrack", that
+// wish to compare filepaths and/or attributes patterns without cleaning across
+// multiple platforms.
+func TrimCurrentPrefix(p string) string {
+	if strings.HasPrefix(p, windowsPrefix) {
+		return strings.TrimPrefix(p, windowsPrefix)
+	}
+	return strings.TrimPrefix(p, nixPrefix)
 }

@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"fmt"
 	"io"
-	"log"
 	"net"
 	"os"
 	"path/filepath"
@@ -29,12 +28,11 @@ import (
 //go:generate go run ../docs/man/mangen.go
 
 var (
-	Debugging    = false
 	ErrorBuffer  = &bytes.Buffer{}
 	ErrorWriter  = newMultiWriter(os.Stderr, ErrorBuffer)
 	OutputWriter = newMultiWriter(os.Stdout, ErrorBuffer)
 	ManPages     = make(map[string]string, 20)
-	tqManifest   = make(map[string]*tq.Manifest)
+	tqManifest   = make(map[string]tq.Manifest)
 
 	cfg       *config.Configuration
 	apiClient *lfsapi.Client
@@ -48,14 +46,14 @@ var (
 
 // getTransferManifest builds a tq.Manifest from the global os and git
 // environments.
-func getTransferManifest() *tq.Manifest {
+func getTransferManifest() tq.Manifest {
 	return getTransferManifestOperationRemote("", "")
 }
 
 // getTransferManifestOperationRemote builds a tq.Manifest from the global os
 // and git environments and operation-specific and remote-specific settings.
 // Operation must be "download", "upload", or the empty string.
-func getTransferManifestOperationRemote(operation, remote string) *tq.Manifest {
+func getTransferManifestOperationRemote(operation, remote string) tq.Manifest {
 	c := getAPIClient()
 
 	global.Lock()
@@ -112,16 +110,17 @@ func newLockClient() *locking.Client {
 }
 
 // newDownloadCheckQueue builds a checking queue, checks that objects are there but doesn't download
-func newDownloadCheckQueue(manifest *tq.Manifest, remote string, options ...tq.Option) *tq.TransferQueue {
+func newDownloadCheckQueue(manifest tq.Manifest, remote string, options ...tq.Option) *tq.TransferQueue {
 	return newDownloadQueue(manifest, remote, append(options,
 		tq.DryRun(true),
 	)...)
 }
 
 // newDownloadQueue builds a DownloadQueue, allowing concurrent downloads.
-func newDownloadQueue(manifest *tq.Manifest, remote string, options ...tq.Option) *tq.TransferQueue {
+func newDownloadQueue(manifest tq.Manifest, remote string, options ...tq.Option) *tq.TransferQueue {
 	return tq.NewTransferQueue(tq.Download, manifest, remote, append(options,
 		tq.RemoteRef(currentRemoteRef()),
+		tq.WithBatchSize(cfg.TransferBatchSize()),
 	)...)
 }
 
@@ -150,10 +149,12 @@ func getHookInstallSteps() string {
 		ExitWithError(err)
 	}
 	hooks := lfs.LoadHooks(hookDir, cfg)
+	hookDir = filepath.ToSlash(hookDir)
+	workingDir := filepath.ToSlash(fmt.Sprintf("%s%c", cfg.LocalWorkingDir(), os.PathSeparator))
 	steps := make([]string, 0, len(hooks))
 	for _, h := range hooks {
 		steps = append(steps, fmt.Sprintf("%s\n\n%s",
-			tr.Tr.Get("Add the following to '.git/hooks/%s':", h.Type),
+			tr.Tr.Get("Add the following to '%s/%s':", strings.TrimPrefix(hookDir, workingDir), h.Type),
 			tools.Indent(h.Contents)))
 	}
 
@@ -234,21 +235,12 @@ func FullError(err error) {
 }
 
 func errorWith(err error, fatalErrFn func(error, string, ...interface{}), errFn func(string, ...interface{})) {
-	if Debugging || errors.IsFatalError(err) {
+	if errors.IsFatalError(err) {
 		fatalErrFn(err, "%s", err)
 		return
 	}
 
 	errFn("%s", err)
-}
-
-// Debug prints a formatted message if debugging is enabled.  The formatted
-// message also shows up in the panic log, if created.
-func Debug(format string, args ...interface{}) {
-	if !Debugging {
-		return
-	}
-	log.Printf(format, args...)
 }
 
 // LoggedError prints the given message formatted with its arguments (if any) to
